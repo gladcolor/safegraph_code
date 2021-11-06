@@ -14,6 +14,7 @@ import dask.dataframe as dd
 import multiprocessing as mp
 import psutil
 from natsort import natsorted
+import subprocess
 
 
 def get_all_files(root_dir, extions=[".gz"]):
@@ -192,9 +193,82 @@ def rename_edge_csv():
 
 
 
+def groupy_counties(edge_csv_list):
+#    if not isinstance(edge_csv_list, list):  # not suitable for mp.list()
+#        edge_csv_list= [edge_csv_list]
+    total_cnt = len(edge_csv_list)     
+    saved_path = r'H:\Safegraph_reorganized\county_monthly_patterns'
+    
+    while len(edge_csv_list) > 0:
+        #print(len(edge_csv_list))
+        edge_csv_file = edge_csv_list.pop(0)
+        print(f"Processing {total_cnt - len(edge_csv_list)} / {total_cnt}:", edge_csv_file)
+        df = pd.read_csv(edge_csv_file, dtype={'visitor_home_cbgs': str})
+        
+
+        df['county_code'] = df['visitor_home_cbgs'].str.zfill(12).str[:5]
+        county_list = df['county_code'].unique()
+        
+        #print("len of county_list:", len(county_list))
+        
+        df_row_cnt = len(df)
+        
+        removed_cnt = 0
+
+        for idx, county in enumerate(county_list):  # cannot use tqdm in multiprocessing! 
+            # print(idx, county)
+            basename = os.path.basename(edge_csv_file)
+            # print("basename:", basename)
+            
+            new_name = f'County_{county}_{basename}'
+            new_name = os.path.join(saved_path, new_name)
+            # print("new_name:", new_name)
+            idxs = df['county_code'] == county
+            county_df = df[idxs]
+            county_df.to_csv(new_name, index=False)
+            #print("len of county_df:", len(county_df))
+            
+            removed_cnt += len(county_df)
+            
+            df = df[~idxs]
+            #print("len of df after removing count_df:", len(df), df_row_cnt - removed_cnt)
+
+     
+
+def patterns_CBG_all_csv(file_dir = r'H:\Safegraph', process_cnt = 3):  
+    
+    out = subprocess.getoutput(f"dir  /b/n/s {file_dir}\monthly*edges*.csv")
+
+    all_files = out.split("\n")
+    
+    print("Found files:", len(all_files))
+    
+    if process_cnt == 1:
+         groupy_counties(all_files)
+    
+    if process_cnt > 1:        
+        all_files_mp = mp.Manager().list()
+        for f in all_files[0:]:
+            all_files_mp.append(f)
+            
+    # print(len(all_files_mp))
+       
+    pool = mp.Pool(processes=process_cnt)
+    for i in range(process_cnt):
+        print('starting process:', i)
+        pool.apply_async(groupy_counties, args=(all_files_mp,))
+    pool.close()
+    pool.join()
+
     # process_dir(dirs[:])
 # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    process_raw_patterns()
+if __name__ == '__main__': 
+    #process_raw_patterns()
+    
+    patterns_CBG_all_csv(file_dir = r'H:\Safegraph', process_cnt =3)   
+
+    
     # rename_edge_csv()
 
+
+    
