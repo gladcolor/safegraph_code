@@ -9,13 +9,15 @@ import glob
 import json
 import csv
 import pandas as pd
-import dask
-import dask.dataframe as dd
+# import dask
+# import dask.dataframe as dd
 import multiprocessing as mp
 import psutil
 from natsort import natsorted
 import subprocess
+import sys
 
+# print("sys.maxsize:", sys.maxsize)
 
 def get_all_files(root_dir, extions=[".gz"]):
     found_files = []
@@ -56,23 +58,37 @@ def split_pois_to_county(df, saved_path):
     unique_county_fips = get_unique_fips(df, column='poi_cbg', left_len=5)
     df['county_fips'] = df['poi_cbg'].astype(str).str[:5]
     region_column = 'region'
+    skipped_county_cnt = 0
     for idx, county_fips in enumerate(unique_county_fips):
         if county_fips[:2] != "45":  # SC: 45
             continue
-        county_df = df[df['county_fips'] == county_fips]
-        state = county_df.iloc[0][region_column]
+        try:
+            county_df = df[df['county_fips'] == county_fips]
+            if len(county_df) == 0:
+                skipped_county_cnt += 1
+                print(f"    {os.getpid()} find no records for county FIPS: ", county_fips, '. Skipped.')
+                print(f"    {os.getpid()} has skipped {skipped_county_cnt} counties. ")
+                continue
+            state = county_df.iloc[0][region_column]
 
-        start_date = get_min_date(df, date_column='date_range_start')
-        to_dir = os.path.join(saved_path, state, county_fips)
-        os.makedirs(to_dir, exist_ok=True)
-        file_name = os.path.join(to_dir, f"{county_fips}_{start_date }.csv")
-        county_df.to_csv(file_name, index=False)
+            start_date = get_min_date(df, date_column='date_range_start')
+            to_dir = os.path.join(saved_path, state, county_fips)
+            os.makedirs(to_dir, exist_ok=True)
+            file_name = os.path.join(to_dir, f"{county_fips}_{start_date }.csv")
+            county_df.to_csv(file_name, index=False)
 
-        df = df.drop(county_df.index)
+            df = df.drop(county_df.index)
 
-        if idx % 500 == 0:
-            print(f"    Processed {idx} counties for week: {start_date}.")
+            if idx % 500 == 0:
+                print(f"    Processed {idx} counties for week: {start_date}.")
 
+        except Exception as e :
+            exception_type, exception_object, exception_traceback = sys.exc_info()
+            filename = exception_traceback.tb_frame.f_code.co_filename
+            line_number = exception_traceback.tb_lineno
+            print("Error in split_pois_to_county() for loop:", e, county_fips, county_df)
+            print("Linenumber: ", line_number, filename)
+            continue
 
 
 def process_dir(dirs, saved_path):
@@ -89,21 +105,22 @@ def process_dir(dirs, saved_path):
 
             # print(csvs)
             dfs = []
-            print("    Reading CSV files...")
-            for idx, csv in enumerate(csv_files[2:]):
-                print("    Reading:", os.path.basename(csv))
-                df = pd.read_csv(csv, engine='python', quoting=3, nrows=None, error_bad_lines=False)
+            print(f"    PID {os.getpid():}  reading CSV files...")
+            for idx, csv in enumerate(csv_files[:]):
+                print(f"    PID {os.getpid()}  reading:", os.path.basename(csv))
+                df = pd.read_csv(csv)
                 df = df.dropna(subset=['poi_cbg'])
-                df = df[df['poi_cbg'].astype(str).str.startswith('45')] # for SC only
-                # df = df[~df['poi_cbg'].astype(str).str.startswith('CA')] # drop: CA:59152171
+                # df = df[~df['poi_cbg'].astype(str).str.startswith('45')] # for SC only
+                df = df[~df['poi_cbg'].astype(str).str.startswith('CA')] # drop: CA:59152171
 
                 df['poi_cbg'].fillna(0)
-                df['poi_cbg'] = df['poi_cbg'].astype(int).astype(str).str.zfill(12)
+                df['poi_cbg'] = df['poi_cbg'].astype(float).astype('int64').astype(str).str.zfill(12)
+                # print("df['poi_cbg']: ", df.iloc[0]['poi_cbg'])
                 dfs.append(df)
 
             df_all = pd.concat(dfs)
-            print( "    Concatenating...")
-            print(f"    Finished reading CSV files, obtained {len(df_all)} rows.")
+            print( f"    PID {os.getpid()} concatenating...")
+            print(f"    PID {os.getpid()} finished reading CSV files, obtained {len(df_all)} rows.")
 
             if not 'safegraph_place_id' in list(df_all.columns):
                 df_all['safegraph_place_id'] = ''
@@ -118,7 +135,15 @@ def process_dir(dirs, saved_path):
             print(f"Processed {total - len(dirs)} / {total}.")
         except Exception as e:
             print("Error in process_dir() while loop:", e, d, csv)
+            exception_type, exception_object, exception_traceback = sys.exc_info()
+            filename = exception_traceback.tb_frame.f_code.co_filename
+            line_number = exception_traceback.tb_lineno
+            print("Error in split_pois_to_county() for loop:", e, county_fips, county_df)
+            print("Linenumber: ", line_number, filename)
+            continue
 
+
+# H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/14/17/patterns-part3.csv.gz
 
 def unfold_row_dict(row, result_list):
     # print(type(row))
@@ -169,46 +194,58 @@ def generate_edge_file_name(root_dir, dataset="monthly_pattern_backfill"):
 
 
 def process_raw_patterns():
-    root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\patterns_backfill\2020\12\14\21'  # finished
 
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Jan 2018 - Apr 2020'  # processed
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns'  # processed
-    root_dir = r"H:\Safegraph\Monthly Places Patterns (aka Patterns) May 2020 - Nov 2020\patterns"  # processed
+    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Jan 2018 - Apr 2020'
+    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns'
+    root_dir = r"H:\Safegraph\Monthly Places Patterns (aka Patterns) May 2020 - Nov 2020\patterns"
     root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns_backfill\2021\04\13'
     root_dir = r'H:\Safegraph\Weekly Places Patterns (for data from 2020-11-30 to Present)\patterns_backfill'
     root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns\2021\06\05\00'
 
-    root_dir = r'/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns'
+    root_dir = r'H:\Safegraph\Weekly Places Patterns (for data from 2020-11-30 to Present)\patterns'  # processed
+    root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\patterns_backfill\2020\12\14\21'  # finished
+    root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2020'  # finished
+
 
     found_files = get_all_files(root_dir, extions=[".gz"])
     dirs = get_dir_from_files(found_files)
-    dirs = natsorted(dirs)
+    dirs = natsorted(dirs, reverse=True)[:]
 
     # Error in /media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/04/07/06
     # Error info: field larger than field limit (131072)
     # field larger than field limit (131072) /media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/23/17
-    dirs = [ '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/14/17',
-            '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/04/07/06',
-            '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/23/17',
-            '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/30/18',
-            '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/07/20',
-            '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/16/18',
-            ]
+    # dirs = [ '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/14/17',
+    #         '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/04/07/06',
+    #         '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/23/17',
+    #         '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/30/18',
+    #         '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/07/20',
+    #         '/media/gpu/easystore/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/16/18',
+    #         ]
+    #
+    # dirs = [r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/14/17',
+    #         r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/04/07/06',
+    #         r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/23/17',
+    #         r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/30/18',
+    #         r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/07/07/20',
+    #         r'H:/Safegraph/Weekly Places Patterns (for data from 2020-11-30 to Present)/patterns/2021/06/16/18',
+    #         ]
 
     dirs_mp = mp.Manager().list()
     for d in dirs[:]:
         dirs_mp.append(d)
+
+    print("Directory count: ", len(dirs_mp))
 
     print("os.cpu_count():", os.cpu_count())
     print("mp.cpu_count():", mp.cpu_count())
     print("psutil.cpu_count(logical = False):", psutil.cpu_count(logical=False))
     print("psutil.cpu_count(logical = True):", psutil.cpu_count(logical=True))
 
-    process_cnt = 1
+    process_cnt = 3
 
     pool = mp.Pool(processes=process_cnt)
 
-    saved_path = r'/media/gpu/easystore/Safegraph_reorganized/county_weekly_patterns_split'
+    saved_path = r'H:\Safegraph_reorganized\county_weekly_patterns_split_2'
 
     for i in range(process_cnt):
         pool.apply_async(process_dir, args=(dirs_mp, saved_path))
