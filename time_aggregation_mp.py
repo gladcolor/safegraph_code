@@ -5,6 +5,19 @@ import multiprocessing as mp
 from tqdm import tqdm
 
 
+def get_state_visits_files(target_state_code_list):
+    csv_files = []
+    for state in target_state_code_list:
+        state_dir = os.path.join(visits_dir, state)
+        files = glob.glob(os.path.join(state_dir, r'*', fr'*.csv'))
+        csv_files += files
+        print(f"    PID: {os.getpid()} found {len(files)} CSV files in state dir: {state_dir}." )
+    return csv_files
+
+def get_periodic_csv_list(csv_files, start_date):
+    for file in files:
+
+    return
 
 def get_visits_csv_files(target_state_code_list, visits_dir, start_date):
     visitor_home_csv_list = []
