@@ -16,6 +16,7 @@ import psutil
 from natsort import natsorted
 import subprocess
 import sys
+import  numpy as np
 
 # print("sys.maxsize:", sys.maxsize)
 
@@ -77,6 +78,9 @@ def split_pois_to_county(df, saved_path):
             file_name = os.path.join(to_dir, f"{county_fips}_{start_date }.csv")
             county_df.to_csv(file_name, index=False)
 
+
+            print(f"    Found {len(county_df): >5} rows for county {county_fips} in {start_date}.")
+
             df = df.drop(county_df.index)
 
             if idx % 500 == 0:
@@ -105,13 +109,15 @@ def process_dir(dirs, saved_path):
 
             # print(csvs)
             dfs = []
-            print(f"    PID {os.getpid():}  reading CSV files...")
+            pid_str = str(os.getpid())
+            print(f"    PID {pid_str: >6} reading CSV files...")
             for idx, csv in enumerate(csv_files[:]):
-                print(f"    PID {os.getpid()}  reading:", os.path.basename(csv))
+
+                print(f"    PID {pid_str: >6} reading:", os.path.basename(csv))
                 df = pd.read_csv(csv)
                 df = df.dropna(subset=['poi_cbg'])
-                # df = df[~df['poi_cbg'].astype(str).str.startswith('45')] # for SC only
-                df = df[~df['poi_cbg'].astype(str).str.startswith('CA')] # drop: CA:59152171
+                df = df[df['poi_cbg'].astype(str).str.startswith('45')] # for SC only
+                # df = df[~df['poi_cbg'].astype(str).str.startswith('CA')] # drop: CA:59152171
 
                 df['poi_cbg'].fillna(0)
                 df['poi_cbg'] = df['poi_cbg'].astype(float).astype('int64').astype(str).str.zfill(12)
@@ -194,17 +200,19 @@ def generate_edge_file_name(root_dir, dataset="monthly_pattern_backfill"):
 
 
 def process_raw_patterns():
+    saved_path = r'H:\Safegraph_reorganized\county_weekly_patterns_2021_release'
 
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Jan 2018 - Apr 2020'
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns'
-    root_dir = r"H:\Safegraph\Monthly Places Patterns (aka Patterns) May 2020 - Nov 2020\patterns"
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns_backfill\2021\04\13'
-    root_dir = r'H:\Safegraph\Weekly Places Patterns (for data from 2020-11-30 to Present)\patterns_backfill'
-    root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns\2021\06\05\00'
+    # root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Jan 2018 - Apr 2020'
+    # root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns'
+    # root_dir = r"H:\Safegraph\Monthly Places Patterns (aka Patterns) May 2020 - Nov 2020\patterns"
+    # root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns_backfill\2021\04\13'
+    # root_dir = r'H:\Safegraph\Weekly Places Patterns (for data from 2020-11-30 to Present)\patterns_backfill'
+    # root_dir = r'H:\Safegraph\Monthly Places Patterns (aka Patterns) Dec 2020 - Present\patterns\2021\06\05\00'
 
     root_dir = r'H:\Safegraph\Weekly Places Patterns (for data from 2020-11-30 to Present)\patterns'  # processed
-    root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\patterns_backfill\2020\12\14\21'  # finished
-    root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2020'  # finished
+    # root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\patterns_backfill\2020\12\14\21'  # finished
+    # root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2020'
+    # root_dir = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2021'
 
 
     found_files = get_all_files(root_dir, extions=[".gz"])
@@ -245,7 +253,7 @@ def process_raw_patterns():
 
     pool = mp.Pool(processes=process_cnt)
 
-    saved_path = r'H:\Safegraph_reorganized\county_weekly_patterns_split_2'
+
 
     for i in range(process_cnt):
         pool.apply_async(process_dir, args=(dirs_mp, saved_path))
@@ -372,9 +380,130 @@ def pattern_poi_split_to_county(file_dir=r'H:\Safegraph', process_cnt=3):
     pool.join()
 
 
-if __name__ == '__main__':
-    process_raw_patterns()
+def extract_placekeys_visits():
+    root_dir =  r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2021'
+    root_dir2 = r'H:\Safegraph\Weekly Places Patterns Backfill for Dec 2020 and Onward Release\release-2021-07\weekly\patterns_backfill\2021\07\15\15\2020'
 
+    saved_path = r'H:\Safegraph_reorganized\Placekeys_all_weekly_patterns_2021_release'
+    found_files = get_all_files(root_dir, extions=[".gz"])
+    found_files2 = get_all_files(root_dir2, extions=[".gz"])
+    dirs1 = get_dir_from_files(found_files)
+    dirs2 = get_dir_from_files(found_files2)
+
+    dirs1 = natsorted(dirs1, reverse=True)[:]
+    dirs2 = natsorted(dirs2, reverse=True)[:]
+    dirs = dirs1 + dirs2
+    dirs = dirs[:]
+
+    usecol_old = ['placekey', 'parent_placekey', 'safegraph_place_id', 'parent_safegraph_place_id', 'raw_visitor_counts']
+    usecol_new = ['placekey', 'parent_placekey', 'raw_visitor_counts']
+
+    drop_colums = ['street_address', 'city', 'postal_code', 'date_range_start',
+                   'date_range_end', 'visits_by_day', 'visits_by_each_hour',
+                   'visitor_home_cbgs', 'visitor_daytime_cbgs', 'visitor_country_of_origin', 'distance_from_home',
+                   'median_dwell']
+
+    concated_df = None
+    is_first_df = True
+
+    total = len(dirs)
+    while len(dirs) > 0:
+        try:
+            d = dirs.pop(0)
+            print(f"Processing directory {total - len(dirs)} / {total}: ", d)
+            # print(idx, csv)
+            csv_files = glob.glob(os.path.join(d, "*csv.gz"))
+            csv_files = natsorted(csv_files)
+
+            # print(csvs)
+
+            pid_str = str(os.getpid())
+            print(f"    PID {pid_str: >6} reading CSV files...")
+
+            dfs = []
+            for idx, csv in enumerate(csv_files[:]):
+
+                print(f"    PID {pid_str: >6} reading:", os.path.basename(csv))
+
+                csv_columns = pd.read_csv(csv, nrows=0).columns.to_list()
+                if 'safegraph_place_id' in csv_columns:
+                    usecols = usecol_old
+                else:
+                    usecols = usecol_new
+
+                df = pd.read_csv(csv, usecols=usecols, nrows=None, dtype={'raw_visitor_counts': int})
+                # df['raw_visitor_counts'] = np.array(df['raw_visitor_counts']).astype(int)
+                dfs.append(df)
+
+            df = pd.concat(dfs, axis=0)
+            # df['raw_visitor_counts'] = np.array(df['raw_visitor_counts']).astype(int)
+            df = df.set_index('placekey')
+
+            # get the start date
+            # dir_name = os.path.dirname(d)  # No need for 2021-07 backfill released
+            dir_name = d
+            start_date = dir_name[-10:].replace('\\', r'-').replace(r'/', r'-')
+            new_column_name = f"visitor_{start_date}"
+            df = df.rename(columns={'raw_visitor_counts': new_column_name})
+            #                 print(f"    Start_date: {start_date}", df.columns)
+
+            if is_first_df:
+                concated_df = df
+                is_first_df = False
+                # print(df.head(1))
+                print(
+                    f'    PID {os.getpid()}: Current rows counts: {len(concated_df)}, previous rows: {0}. Added {len(concated_df)} rows.')
+
+                continue
+            # print(df.dtypes, df)
+            old_row_cnt = len(concated_df)
+            concated_df = concated_df.merge(df[[new_column_name]], how='outer', left_index=True, right_index=True)
+            # concated_df[new_column_name] = concated_df[new_column_name].fillna(0).astype(int)
+            # concated_df = pd.concat([concated_df, df]).drop_duplicates(subset='placekey').reset_index(drop=True)
+
+            new_row_cnt = len(concated_df)
+            print(
+                f'    PID {os.getpid()}: Current rows counts: {new_row_cnt}, previous rows: {old_row_cnt}. Added {new_row_cnt - old_row_cnt} rows, removed {old_row_cnt + len(df) - new_row_cnt} duplated rows.')
+
+            print(f"Processed {total - len(dirs)} / {total}.")
+
+        except Exception as e:
+            print("Error in process_dir() while loop:", e, d, csv)
+            exception_type, exception_object, exception_traceback = sys.exc_info()
+            filename = exception_traceback.tb_frame.f_code.co_filename
+            line_number = exception_traceback.tb_lineno
+            print("Linenumber: ", line_number, filename)
+
+    # compute the all visitors
+    vistors_np = concated_df.iloc[:, -total:]
+    vistors_np = np.nan_to_num(vistors_np, nan=0)
+
+    concated_df['total_visitors'] = vistors_np.sum(axis=1).astype(int)
+    # print(concated_df.drop(columns=usecols[:4]))
+    new_name = os.path.join(saved_path, "all_placekey.csv")
+    if not os.path.exists(saved_path):
+        os.makedirs(saved_path)
+    vistors_df = concated_df.drop(columns=['parent_placekey'])
+    try:
+        vistors_df = vistors_df.drop(columns=['safegraph_place_id'])
+        vistors_df = vistors_df.drop(columns=['parent_safegraph_place_id'])
+        #     usecol_old = ['placekey', 'parent_placekey', 'safegraph_place_id', 'parent_safegraph_place_id', 'raw_visitor_counts']
+    except:
+        pass
+    vistors_df = vistors_df.fillna(0).astype(int)
+    placekey_id_df = concated_df.drop(columns=vistors_df.columns)
+    concated_df = pd.concat((placekey_id_df, vistors_df), axis=1)
+    concated_df = concated_df.sort_values('total_visitors', ascending=False)
+    concated_df.to_csv(new_name, index=True)
+    print("Done.")
+    return concated_df
+
+
+
+
+if __name__ == '__main__':
+    # process_raw_patterns()
+    extract_placekeys_visits()
     # patterns_CBG_all_csv(file_dir=r'H:\Safegraph', process_cnt=3)
 
     # rename_edge_csv()

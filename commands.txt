@@ -1,0 +1,12 @@
+cd H:\Safegraph\python_code
+H:
+conda activate Google_street_view
+python time_aggregation_mp.py
+
+
+python split_dict_columns.py
+
+cd H:\Safegraph\python_code
+H:
+conda activate Google_street_view
+jupyter lab
